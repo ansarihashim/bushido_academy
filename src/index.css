@@ -1,29 +1,566 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: "Bebas Neue", "Impact", sans-serif;
+  --font-heading: "Oswald", "Inter", sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+}
+
 html {
   scroll-behavior: smooth;
+  /* Clip horizontal overflow only — never overflow-y, which would kill
+     vertical scrolling. html stays the document scroller so window.scrollTo
+     and position: sticky keep working. */
+  overflow-x: hidden;
 }
 
 body {
   background-color: #0a0a0a;
   color: #f5f5f5;
   margin: 0;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
 }
 
+/* min-height only — intentionally NO overflow on #root, so the window stays
+   the scroll container (otherwise window.scrollTo and the sticky navbar break). */
+#root {
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Oswald", sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* ===== Site color themes — data-theme on <html>, driven by SiteSettings =====
+   Tailwind v4 utilities reference var(--color-yellow-*), so overriding the
+   yellow scale here re-themes every existing yellow-* class site-wide. These
+   rules are unlayered, so they beat Tailwind's @layer theme defaults. */
+:root[data-theme="gold"] {
+  --accent: #eab308;
+  --accent-dark: #a16207;
+  --accent-glow: rgba(234, 179, 8, 0.4);
+  --color-yellow-50: #fefce8;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-200: #fef08a;
+  --color-yellow-300: #fde047;
+  --color-yellow-400: #facc15;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #ca8a04;
+  --color-yellow-700: #a16207;
+  --color-yellow-800: #854d0e;
+  --color-yellow-900: #713f12;
+  --color-yellow-950: #422006;
+}
+:root[data-theme="red"] {
+  --accent: #dc2626;
+  --accent-dark: #991b1b;
+  --accent-glow: rgba(220, 38, 38, 0.4);
+  --color-yellow-50: #fef2f2;
+  --color-yellow-100: #fee2e2;
+  --color-yellow-200: #fecaca;
+  --color-yellow-300: #fca5a5;
+  --color-yellow-400: #f87171;
+  --color-yellow-500: #dc2626;
+  --color-yellow-600: #b91c1c;
+  --color-yellow-700: #991b1b;
+  --color-yellow-800: #7f1d1d;
+  --color-yellow-900: #671818;
+  --color-yellow-950: #450a0a;
+}
+:root[data-theme="silver"] {
+  --accent: #94a3b8;
+  --accent-dark: #64748b;
+  --accent-glow: rgba(148, 163, 184, 0.4);
+  --color-yellow-50: #f8fafc;
+  --color-yellow-100: #f1f5f9;
+  --color-yellow-200: #e2e8f0;
+  --color-yellow-300: #cbd5e1;
+  --color-yellow-400: #aab6c5;
+  --color-yellow-500: #94a3b8;
+  --color-yellow-600: #64748b;
+  --color-yellow-700: #475569;
+  --color-yellow-800: #334155;
+  --color-yellow-900: #1e293b;
+  --color-yellow-950: #0f172a;
+}
+
+/* Hide native cursor everywhere (custom cursor handles it) */
+* {
+  cursor: none;
+}
+
+/* Cursor mode "none": restore the native browser cursor everywhere. */
+html[data-cursor="none"] * {
+  cursor: auto;
+}
+
+/* Subtle film grain overlay on entire site */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+}
+
+/* Page route fade-in (keyed by pathname on <main>) */
 @keyframes pageFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
 .page-fade {
   animation: pageFadeIn 0.4s ease-out both;
+}
+
+/* Scroll reveal (IntersectionObserver-driven) */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Navbar bottom red bar animates in once on page load */
+@keyframes expandLineX {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.animate-expand-x {
+  transform-origin: left center;
+  animation: expandLineX 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Slow drift for ambient hero glow */
+@keyframes ambientGlow {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.06); }
+}
+.animate-ambient {
+  animation: ambientGlow 6s ease-in-out infinite;
+}
+
+/* ---------- Martial-arts decorative animations ---------- */
+
+/* Fighter silhouette: subtle vertical float + ambient glow */
+@keyframes fighterFloat {
+  from { transform: translateY(0); }
+  to { transform: translateY(-10px); }
+}
+.animate-fighter-float {
+  animation: fighterFloat 3s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 30px rgba(234, 179, 8, 0.4));
+}
+
+/* Floating glove: swinging punch */
+@keyframes swingGlove {
+  from { transform: rotate(-5deg); }
+  to { transform: rotate(5deg); }
+}
+.animate-swing-glove {
+  animation: swingGlove 4s ease-in-out infinite alternate;
+}
+
+/* Nunchaku: gentle sway */
+@keyframes swayNunchaku {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(15deg); }
+}
+.animate-sway-nun {
+  animation: swayNunchaku 2.5s ease-in-out infinite alternate;
+}
+
+/* Shuriken: continuous spin */
+@keyframes spinShuriken {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-shuriken {
+  animation: spinShuriken 8s linear infinite;
+}
+
+/* Fist: punching jab back-and-forth */
+@keyframes punchJab {
+  from { transform: translateX(0); }
+  to { transform: translateX(-8px); }
+}
+.animate-jab {
+  animation: punchJab 1.5s ease-in-out infinite alternate;
+}
+
+/* Karate chop hand: rotating downward strike */
+@keyframes chopHand {
+  from { transform: rotate(-20deg); }
+  to { transform: rotate(10deg); }
+}
+.animate-chop {
+  transform-origin: top center;
+  animation: chopHand 0.8s ease-in-out infinite alternate;
+}
+
+/* Kicking leg: pivoting kick */
+@keyframes kickLeg {
+  from { transform: rotate(-10deg); }
+  to { transform: rotate(20deg); }
+}
+.animate-kick {
+  transform-origin: top center;
+  animation: kickLeg 1s ease-in-out infinite alternate;
+}
+
+/* Punching bag: pendulum swing from chain */
+@keyframes bagPendulum {
+  from { transform: rotate(-8deg); }
+  to { transform: rotate(8deg); }
+}
+.animate-pendulum {
+  transform-origin: top center;
+  animation: bagPendulum 1.5s ease-in-out infinite alternate;
+}
+
+/* Crossed swords / belt knot: subtle sway */
+@keyframes swordSway {
+  from { transform: rotate(-3deg); }
+  to { transform: rotate(3deg); }
+}
+.animate-sword-sway {
+  animation: swordSway 3s ease-in-out infinite alternate;
+}
+
+/* Navbar logo crest: quick spin on group hover */
+.logo-crest {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.group:hover .logo-crest {
+  transform: rotate(360deg);
+}
+
+/* Global red glow utility */
+.gold-glow {
+  box-shadow: 0 0 30px rgba(234, 179, 8, 0.3);
+}
+.gold-glow-strong {
+  box-shadow:
+    0 0 30px rgba(234, 179, 8, 0.45),
+    0 0 60px rgba(234, 179, 8, 0.25);
+}
+
+/* Global button styles */
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  font-family: "Oswald", sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.875rem;
+  padding: 1rem 2rem;
+  border-radius: 0;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.1s ease;
+  border: 2px solid transparent;
+  line-height: 1;
+}
+.btn-primary {
+  background-color: #eab308;
+  color: #ffffff;
+}
+.btn-primary:hover {
+  background-color: #ca8a04;
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.5);
+}
+.btn-secondary {
+  background-color: transparent;
+  color: #ffffff;
+  border-color: #ffffff;
+}
+.btn-secondary:hover {
+  background-color: #eab308;
+  border-color: #eab308;
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.5);
+}
+.btn-primary:active,
+.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+/* Custom cursor base */
+.cursor-ring,
+.cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  /* Above all admin overlays, including the login modal card (99999). */
+  z-index: 100000;
+  border-radius: 9999px;
+  will-change: transform;
+  mix-blend-mode: difference;
+}
+.cursor-ring {
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid #eab308;
+  transition:
+    width 0.2s ease,
+    height 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+.cursor-ring.is-active {
+  width: 50px;
+  height: 50px;
+  background-color: rgba(234, 179, 8, 0.15);
+  border-color: #eab308;
+}
+.cursor-ring::before,
+.cursor-ring::after {
+  content: "";
+  position: absolute;
+  background: #eab308;
+}
+.cursor-ring::before {
+  top: 50%;
+  left: -6px;
+  right: -6px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+.cursor-ring::after {
+  left: 50%;
+  top: -6px;
+  bottom: -6px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+.cursor-dot {
+  width: 6px;
+  height: 6px;
+  background: #eab308;
+}
+
+/* Hide custom cursor on touch / no-hover devices */
+@media (hover: none), (pointer: coarse) {
+  * { cursor: auto; }
+  .cursor-ring, .cursor-dot { display: none; }
+}
+
+/* ---------- Admin floating panel — modal + toolbar transitions ---------- */
+
+@keyframes modalFadeIn {
+  0%   { opacity: 0; transform: translate(-50%, -45%); }
+  100% { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+@keyframes overlayFadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes modalFadeOut {
+  0%   { opacity: 1; transform: translate(-50%, -50%); }
+  100% { opacity: 0; transform: translate(-50%, -45%); }
+}
+
+@keyframes toolbarSlideUp {
+  0%   { opacity: 0; transform: translateY(100%); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toolbarSlideDown {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(100%); }
+}
+
+/* ---------- Logo float (About divider + Footer crown) ---------- */
+
+@keyframes dragonFloat {
+  0%, 100% {
+    opacity: 0.07;
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    opacity: 0.11;
+    transform: translateY(-53%) scale(1.04);
+  }
+}
+
+/* ---------- Hero fire effect ---------- */
+
+/* Title wrapper — the dragon orbits relative to this, fire pulses on it */
+.hero-title-container {
+  position: relative;
+  display: inline-block;
+}
+
+/* The burning BUSHIDO wordmark — fiery gradient fill + glowing heat */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  background: linear-gradient(
+    180deg,
+    #fff7ed 0%,
+    #fde047 25%,
+    #fb923c 55%,
+    #ef4444 80%,
+    #991b1b 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: burnGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes burnGlow {
+  0% {
+    filter:
+      drop-shadow(0 0 10px rgba(251,146,60,0.8))
+      drop-shadow(0 0 25px rgba(234,179,8,0.5));
+  }
+  100% {
+    filter:
+      drop-shadow(0 0 20px rgba(239,68,68,1))
+      drop-shadow(0 0 50px rgba(251,146,60,0.7))
+      drop-shadow(0 0 70px rgba(234,179,8,0.4));
+  }
+}
+
+/* Pulsing fire glow sitting on the wordmark (dragon's breath) */
+.text-fire {
+  position: absolute;
+  inset: -10% -8%;
+  z-index: 1;
+  background: radial-gradient(ellipse 80% 60% at 50% 50%,
+    rgba(251,146,60,0.4) 0%,
+    rgba(234,179,8,0.3) 30%,
+    rgba(239,68,68,0.2) 50%,
+    transparent 70%);
+  animation: textBurnPulse 3s ease-in-out infinite;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+@keyframes textBurnPulse {
+  0%, 100% { opacity: 0.6; filter: blur(8px); }
+  50% { opacity: 1; filter: blur(4px); }
+}
+
+/* Embers rising off the burning letters */
+.hero-ember {
+  position: absolute;
+  bottom: 8%;
+  z-index: 4;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+@keyframes fireRise {
+  0%   { opacity: 0.6; transform: translateX(-50%) scaleY(1) translateY(0px); filter: blur(8px); }
+  50%  { opacity: 0.9; transform: translateX(-50%) scaleY(1.05) translateY(-8px); filter: blur(6px); }
+  100% { opacity: 0.6; transform: translateX(-50%) scaleY(1) translateY(0px); filter: blur(8px); }
+}
+
+@keyframes ember1 {
+  0%   { transform: translate(0px, 0px) scale(1); opacity: 0.9; }
+  100% { transform: translate(-20px, -180px) scale(0); opacity: 0; }
+}
+@keyframes ember2 {
+  0%   { transform: translate(0px, 0px) scale(1); opacity: 0.8; }
+  100% { transform: translate(30px, -220px) scale(0); opacity: 0; }
+}
+@keyframes ember3 {
+  0%   { transform: translate(0px, 0px) scale(0.8); opacity: 1; }
+  100% { transform: translate(-40px, -160px) scale(0); opacity: 0; }
+}
+@keyframes ember4 {
+  0%   { transform: translate(0px, 0px) scale(1.2); opacity: 0.7; }
+  100% { transform: translate(15px, -200px) scale(0); opacity: 0; }
+}
+@keyframes ember5 {
+  0%   { transform: translate(0px, 0px) scale(0.9); opacity: 0.9; }
+  100% { transform: translate(-10px, -240px) scale(0); opacity: 0; }
+}
+
+/* ---------- Orbiting dragon (circles the BUSHIDO wordmark) ---------- */
+
+/* Wrapper rotates around the text centre; inner counter-rotation keeps the
+   dragon upright instead of tumbling. translateX = orbit radius. */
+@keyframes dragonOrbit {
+  from { transform: rotate(0deg) translateX(var(--orbit-r)) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(var(--orbit-r)) rotate(-360deg); }
+}
+
+/* Stretches the circular orbit into a wide ellipse that hugs the wordmark.
+   The dragon image counter-scales on X so it isn't stretched. */
+.dragon-orbit-ellipse {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  transform: scaleX(1.35);
+  pointer-events: none;
+}
+
+.dragon-orbit-wrapper {
+  --orbit-r: 380px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  animation: dragonOrbit 12s linear infinite;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.dragon-orbit-img {
+  position: absolute;
+  width: 180px;
+  height: auto;
+  /* centre on the orbit point, flip so the mouth faces inward, and undo the
+     1.35 ellipse stretch (−1 / 1.35 ≈ −0.741) */
+  transform: translate(-50%, -50%) scaleX(-0.741);
+  filter:
+    saturate(1.3) contrast(1.1) brightness(1.1)
+    drop-shadow(0 0 15px rgba(251,146,60,0.6))
+    drop-shadow(0 0 30px rgba(234,179,8,0.4));
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .dragon-orbit-ellipse { transform: scaleX(1.25); }
+  .dragon-orbit-wrapper { --orbit-r: 200px; }
+  .dragon-orbit-img {
+    width: 110px;
+    transform: translate(-50%, -50%) scaleX(-0.8); /* −1 / 1.25 = −0.8 */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dragon-orbit-wrapper { animation: none !important; }
 }

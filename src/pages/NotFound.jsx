@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+﻿import { Link } from 'react-router-dom'
 
 function ArrowRightIcon() {
   return (
@@ -25,27 +25,27 @@ export default function NotFound() {
         className="absolute inset-0 -z-10"
         style={{
           background:
-            'radial-gradient(ellipse at 50% 40%, rgba(220,38,38,0.18), transparent 60%), #0a0a0a',
+            'radial-gradient(ellipse at 50% 40%, rgba(234,179,8,0.18), transparent 60%), #0a0a0a',
         }}
       />
       <div
         className="absolute inset-0 -z-10 opacity-[0.05]"
         style={{
           backgroundImage:
-            'repeating-linear-gradient(135deg, #dc2626 0 2px, transparent 2px 80px)',
+            'repeating-linear-gradient(135deg, #eab308 0 2px, transparent 2px 80px)',
         }}
       />
 
       <div className="text-center max-w-2xl">
-        <p className="text-xs tracking-[0.3em] uppercase text-red-600 font-bold mb-4">
+        <p className="text-xs tracking-[0.3em] uppercase text-yellow-500 font-bold mb-4">
           Lost on the Path
         </p>
         <h1 className="text-[7rem] sm:text-[10rem] font-black tracking-tight text-white leading-none">
-          4<span className="text-red-600">0</span>4
+          4<span className="text-yellow-500">0</span>4
         </h1>
         <div className="flex items-center justify-center gap-3 my-6">
           <span className="h-px w-12 bg-neutral-700" />
-          <span className="h-1 w-24 bg-red-600" />
+          <span className="h-1 w-24 bg-yellow-500" />
           <span className="h-px w-12 bg-neutral-700" />
         </div>
         <h2 className="text-2xl sm:text-3xl font-black tracking-wide text-white mb-4">
@@ -57,7 +57,7 @@ export default function NotFound() {
         </p>
         <Link
           to="/"
-          className="group inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-wider text-sm px-8 py-4 rounded-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-10px_rgba(220,38,38,0.6)]"
+          className="group inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold uppercase tracking-wider text-sm px-8 py-4 rounded-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-10px_rgba(234,179,8,0.6)]"
         >
           Go Home
           <span className="transition-transform duration-200 group-hover:translate-x-1">

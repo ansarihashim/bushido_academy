@@ -1,12 +1,20 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import {
   NavLink,
   Outlet,
   useNavigate,
 } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  serverTimestamp,
+} from 'firebase/firestore'
 import { Menu, X } from 'lucide-react'
-import { auth } from '../../firebase/config'
+import { auth, db } from '../../firebase/config'
 import { useAuth } from '../../context/AuthContext'
 import { seedFirestore } from '../../utils/seedData'
 
@@ -85,6 +93,24 @@ function IconUser() {
   )
 }
 
+function IconSlides() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="4" width="20" height="14" rx="2" ry="2" />
+      <line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  )
+}
+
 function IconLogout() {
   return (
     <svg
@@ -108,6 +134,7 @@ const NAV_ITEMS = [
   { to: '/admin', label: 'Overview', icon: <IconHome />, end: true },
   { to: '/admin/events', label: 'Events', icon: <IconCalendar /> },
   { to: '/admin/gallery', label: 'Gallery', icon: <IconImage /> },
+  { to: '/admin/slides', label: 'Hero Slides', icon: <IconSlides /> },
   {
     to: '/admin/trainer-bio',
     label: 'Trainer Bio',
@@ -121,6 +148,8 @@ export default function AdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [seedStatus, setSeedStatus] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const [testStatus, setTestStatus] = useState(null)
 
   async function handleLogout() {
     await signOut(auth)
@@ -141,12 +170,38 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleTestFirestore() {
+    if (testing) return
+    setTesting(true)
+    setTestStatus(null)
+    console.log('[AdminDashboard] Testing Firestore: write -> read -> delete')
+    try {
+      const payload = { hello: 'bushido', at: serverTimestamp() }
+      const ref = await addDoc(collection(db, 'test'), payload)
+      console.log('[AdminDashboard] Test write OK:', ref.id)
+      const snap = await getDoc(doc(db, 'test', ref.id))
+      console.log('[AdminDashboard] Test read OK:', snap.data())
+      if (!snap.exists()) throw new Error('Document not found after write')
+      await deleteDoc(doc(db, 'test', ref.id))
+      console.log('[AdminDashboard] Test cleanup OK')
+      setTestStatus({ type: 'ok', message: 'Firestore connected' })
+    } catch (err) {
+      console.error('[AdminDashboard] Firestore test failed:', err.code, err.message, err)
+      setTestStatus({
+        type: 'err',
+        message: `${err.code || 'error'}: ${err.message || 'Unknown error'}`,
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const linkClass = ({ isActive }) =>
     [
       'flex items-center gap-3 px-4 py-3 rounded-sm text-sm font-bold uppercase tracking-wider border-l-4 transition-all duration-200',
       isActive
-        ? 'text-red-600 border-red-600 bg-neutral-900'
-        : 'text-neutral-400 border-transparent hover:text-white hover:border-red-600 hover:bg-neutral-900/60',
+        ? 'text-yellow-500 border-yellow-500 bg-neutral-900'
+        : 'text-neutral-400 border-transparent hover:text-white hover:border-yellow-500 hover:bg-neutral-900/60',
     ].join(' ')
 
   return (
@@ -162,7 +217,7 @@ export default function AdminDashboard() {
           <p className="text-2xl font-black tracking-widest text-white">
             BUSHIDO
           </p>
-          <p className="text-[9px] font-semibold tracking-[0.18em] text-red-600 mt-1">
+          <p className="text-[9px] font-semibold tracking-[0.18em] text-yellow-500 mt-1">
             ADMIN PANEL
           </p>
         </div>
@@ -194,37 +249,65 @@ export default function AdminDashboard() {
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-sm text-sm font-bold uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 transition-colors duration-200"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-sm text-sm font-bold uppercase tracking-wider text-white bg-yellow-500 hover:bg-yellow-600 transition-colors duration-200"
           >
             <IconLogout />
             Logout
           </button>
 
           {import.meta.env.DEV && (
-            <div className="px-1 pt-2">
-              <button
-                type="button"
-                onClick={handleSeed}
-                disabled={seeding}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-[0.2em] border border-dashed border-neutral-700 text-neutral-400 hover:border-red-600 hover:text-red-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                title="Dev only: seeds founder document to Firestore"
-              >
-                {seeding ? 'Seeding...' : 'Seed Data'}
-              </button>
-              {seedStatus && (
-                <p
-                  className={
-                    'mt-2 px-1 text-[10px] leading-snug ' +
-                    (seedStatus.type === 'err'
-                      ? 'text-red-400'
-                      : seedStatus.type === 'ok'
-                      ? 'text-green-500'
-                      : 'text-neutral-500')
-                  }
+            <div className="px-1 pt-2 space-y-3">
+              <div>
+                <button
+                  type="button"
+                  onClick={handleTestFirestore}
+                  disabled={testing}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-[0.2em] border border-dashed border-neutral-700 text-neutral-400 hover:border-yellow-500 hover:text-yellow-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  title="Dev only: writes + reads + deletes a doc in /test"
                 >
-                  {seedStatus.message}
-                </p>
-              )}
+                  {testing ? 'Testing...' : 'Test Firestore Connection'}
+                </button>
+                {testStatus && (
+                  <p
+                    className={
+                      'mt-2 px-1 text-[10px] leading-snug break-all ' +
+                      (testStatus.type === 'err'
+                        ? 'text-red-400'
+                        : 'text-green-500')
+                    }
+                  >
+                    {testStatus.type === 'ok'
+                      ? '✅ ' + testStatus.message
+                      : '❌ Error: ' + testStatus.message}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={handleSeed}
+                  disabled={seeding}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-[0.2em] border border-dashed border-neutral-700 text-neutral-400 hover:border-yellow-500 hover:text-yellow-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  title="Dev only: seeds founder document to Firestore"
+                >
+                  {seeding ? 'Seeding...' : 'Seed Data'}
+                </button>
+                {seedStatus && (
+                  <p
+                    className={
+                      'mt-2 px-1 text-[10px] leading-snug ' +
+                      (seedStatus.type === 'err'
+                        ? 'text-red-400'
+                        : seedStatus.type === 'ok'
+                        ? 'text-green-500'
+                        : 'text-neutral-500')
+                    }
+                  >
+                    {seedStatus.message}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -243,13 +326,13 @@ export default function AdminDashboard() {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="lg:hidden sticky top-0 z-20 bg-[#0a0a0a]/95 backdrop-blur border-b border-neutral-900 px-4 py-3 flex items-center justify-between">
           <p className="text-lg font-black tracking-widest text-white">
-            BUSHIDO <span className="text-red-600">ADMIN</span>
+            BUSHIDO <span className="text-yellow-500">ADMIN</span>
           </p>
           <button
             type="button"
             onClick={() => setSidebarOpen((v) => !v)}
             aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
-            className="inline-flex items-center justify-center p-2 rounded-sm text-neutral-200 hover:text-red-600 hover:bg-neutral-900 transition-colors"
+            className="inline-flex items-center justify-center p-2 rounded-sm text-neutral-200 hover:text-yellow-500 hover:bg-neutral-900 transition-colors"
           >
             {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
           </button>

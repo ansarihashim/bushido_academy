@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
-import { Mail } from 'lucide-react'
+import logo from '../assets/logo.jpeg'
+import { useContent } from '../context/ContentContext'
 
-function InstagramIcon({ size = 18 }) {
+function InstagramIcon({ size = 40 }) {
   return (
     <svg
       width={size}
@@ -21,7 +22,7 @@ function InstagramIcon({ size = 18 }) {
   )
 }
 
-function FacebookIcon({ size = 18 }) {
+function FacebookIcon({ size = 40 }) {
   return (
     <svg
       width={size}
@@ -37,107 +38,107 @@ function FacebookIcon({ size = 18 }) {
 
 const NAV_LINKS = [
   { to: '/', label: 'Home' },
-  { to: '/about', label: 'About' },
-  { to: '/trainers', label: 'Trainers' },
-  { to: '/events', label: 'Events' },
   { to: '/gallery', label: 'Gallery' },
+  { to: '/events', label: 'Events' },
+  { to: '/about', label: 'About' },
   { to: '/contact', label: 'Contact' },
 ]
 
-const EMAIL = 'bushidokksa@gmail.com'
 const INSTAGRAM_URL =
   'https://www.instagram.com/bushido_karate_kickboxing_dojo'
 const FACEBOOK_URL = 'https://www.facebook.com/share/18iEX41qZh/'
 
 export default function Footer() {
+  const { t } = useContent()
+
   return (
-    <footer className="bg-[#0a0a0a] text-neutral-300 border-t border-neutral-900 mt-auto">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-          <div>
-            <div className="mb-4">
-              <h3 className="text-2xl font-black tracking-widest text-white">
-                BUSHIDO
-              </h3>
-              <p className="text-[10px] font-semibold tracking-[0.18em] text-red-600 mt-1">
-                KARATE KICKBOXING &amp; SPORTS ACADEMY
-              </p>
-            </div>
-            <p className="text-sm leading-relaxed text-neutral-400">
-              Training warriors in karate, kickboxing, and sports disciplines.
-              Building discipline, strength, and honor through traditional
-              martial arts and modern athletic training.
-            </p>
-          </div>
+    <footer className="relative bg-[#111111] text-neutral-300">
+      {/* Angled yellow slash along the top edge */}
+      <div
+        className="absolute -top-6 left-0 right-0 h-6 bg-yellow-500"
+        style={{ clipPath: 'polygon(0 100%, 100% 0, 100% 100%, 0 100%)' }}
+        aria-hidden="true"
+      />
 
-          <div>
-            <h4 className="text-sm font-bold uppercase tracking-widest text-white mb-4 relative inline-block">
-              Quick Links
-              <span className="absolute left-0 -bottom-2 h-0.5 w-10 bg-red-600" />
-            </h4>
-            <ul className="space-y-2 mt-6">
-              {NAV_LINKS.map((link) => (
-                <li key={link.to}>
-                  <Link
-                    to={link.to}
-                    className="text-sm text-neutral-400 hover:text-red-600 transition-colors duration-200 inline-flex items-center group"
-                  >
-                    <span className="w-0 h-0.5 bg-red-600 mr-0 group-hover:w-3 group-hover:mr-2 transition-all duration-200" />
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16 flex flex-col items-center text-center">
+        {/* DRAGON CROWN — academy logo */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+          <img
+            src={logo}
+            alt="Bushido Academy"
+            style={{
+              width: '140px',
+              height: '140px',
+              objectFit: 'contain',
+              filter:
+                'sepia(1) saturate(2) hue-rotate(5deg) brightness(1.1) drop-shadow(0 0 20px rgba(234,179,8,0.5))',
+              mixBlendMode: 'screen',
+              animation: 'dragonFloat 8s ease-in-out infinite',
+            }}
+          />
+        </div>
 
-          <div>
-            <h4 className="text-sm font-bold uppercase tracking-widest text-white mb-4 relative inline-block">
-              Connect
-              <span className="absolute left-0 -bottom-2 h-0.5 w-10 bg-red-600" />
-            </h4>
-            <div className="mt-6 space-y-3">
-              <a
-                href={`mailto:${EMAIL}`}
-                className="flex items-center gap-3 text-sm text-neutral-400 hover:text-red-600 transition-colors duration-200 group"
+        {/* TOP — wordmark */}
+        <h2 className="font-display text-[80px] leading-none text-yellow-500 tracking-[0.04em]">
+          BUSHIDO
+        </h2>
+        <p className="font-heading mt-2 text-xs sm:text-sm tracking-[0.4em] uppercase text-yellow-600/80 font-semibold">
+          {t('footer_description', 'Karate Kickboxing & Sports Academy')}
+        </p>
+
+        {/* MIDDLE — nav */}
+        <span className="block w-full max-w-sm h-px bg-yellow-500/60 my-10" />
+
+        <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-3">
+          {NAV_LINKS.map((link, i) => (
+            <span key={link.to} className="inline-flex items-center gap-4">
+              {i > 0 && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-yellow-500"
+                  aria-hidden="true"
+                />
+              )}
+              <Link
+                to={link.to}
+                className="font-heading text-sm tracking-[0.2em] uppercase text-neutral-300 hover:text-yellow-500 transition-colors duration-200"
               >
-                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-neutral-900 group-hover:bg-red-800 transition-colors duration-200">
-                  <Mail size={16} />
-                </span>
-                <span className="break-all">{EMAIL}</span>
-              </a>
+                {link.label}
+              </Link>
+            </span>
+          ))}
+        </nav>
 
-              <div className="flex items-center gap-3 pt-2">
-                <a
-                  href={INSTAGRAM_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Instagram"
-                  className="flex items-center justify-center w-10 h-10 rounded-full bg-neutral-900 text-neutral-300 hover:bg-red-600 hover:text-white transition-all duration-200 hover:-translate-y-0.5"
-                >
-                  <InstagramIcon size={18} />
-                </a>
-                <a
-                  href={FACEBOOK_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Facebook"
-                  className="flex items-center justify-center w-10 h-10 rounded-full bg-neutral-900 text-neutral-300 hover:bg-red-600 hover:text-white transition-all duration-200 hover:-translate-y-0.5"
-                >
-                  <FacebookIcon size={18} />
-                </a>
-              </div>
-            </div>
-          </div>
+        {/* SOCIAL */}
+        <div className="flex items-center justify-center gap-8 mt-10">
+          <a
+            href={INSTAGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Instagram"
+            className="text-neutral-300 hover:text-yellow-500 transition-all duration-200 hover:scale-110 hover:drop-shadow-[0_0_12px_rgba(234,179,8,0.7)]"
+          >
+            <InstagramIcon size={40} />
+          </a>
+          <a
+            href={FACEBOOK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Facebook"
+            className="text-neutral-300 hover:text-yellow-500 transition-all duration-200 hover:scale-110 hover:drop-shadow-[0_0_12px_rgba(234,179,8,0.7)]"
+          >
+            <FacebookIcon size={40} />
+          </a>
         </div>
-      </div>
 
-      <div className="border-t border-neutral-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-          <p className="text-center text-xs text-neutral-500">
-            &copy; 2025 Bushido Karate Kickboxing &amp; Sports Academy. All
-            rights reserved.
-          </p>
-        </div>
+        {/* BOTTOM */}
+        <span className="block w-full max-w-sm h-px bg-yellow-500/30 my-10" />
+
+        <p className="text-xs text-neutral-500">
+          {t('footer_copyright', '© 2025 Bushido Karate Kickboxing & Sports Academy. All rights reserved.')}
+        </p>
+        <p className="text-xs text-neutral-600 mt-1.5">
+          Built with <span className="text-yellow-500">❤️</span> for the Dojo
+        </p>
       </div>
     </footer>
   )

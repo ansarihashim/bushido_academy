@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 
 export function useToast() {
   const [toast, setToast] = useState(null)
@@ -28,14 +28,14 @@ export default function Toast({ toast, onClose }) {
       className={
         'fixed top-6 right-6 z-[200] max-w-sm flex items-start gap-3 p-4 pr-10 rounded-sm shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5)] border-l-4 animate-[slideIn_0.25s_ease-out] ' +
         (isError
-          ? 'bg-[#171717] border-red-600 text-white'
-          : 'bg-[#171717] border-red-600 text-white')
+          ? 'bg-[#171717] border-yellow-500 text-white'
+          : 'bg-[#171717] border-yellow-500 text-white')
       }
     >
       <span
         className={
           'flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-sm ' +
-          (isError ? 'bg-red-950/60 text-red-400' : 'bg-red-600 text-white')
+          (isError ? 'bg-yellow-950/60 text-yellow-300' : 'bg-yellow-500 text-white')
         }
       >
         {isError ? (
@@ -68,7 +68,7 @@ export default function Toast({ toast, onClose }) {
         )}
       </span>
       <div className="flex-1">
-        <p className="text-[10px] tracking-[0.3em] uppercase text-red-600 font-bold mb-0.5">
+        <p className="text-[10px] tracking-[0.3em] uppercase text-yellow-500 font-bold mb-0.5">
           {isError ? 'Error' : 'Success'}
         </p>
         <p className="text-sm text-neutral-200 leading-relaxed">

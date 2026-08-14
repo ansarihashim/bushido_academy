@@ -1,6 +1,6 @@
 # Bushido Karate Kickboxing & Sports Academy
 
-Official website for **Bushido Karate Kickboxing & Sports Academy** in Mumbai — a premier martial arts academy founded by Sensei Afzal Sultan Khan, teaching Karate Shotokan and Kickboxing with discipline, respect, and the spirit of the warrior.
+Official website for **Bushido Karate Kickboxing & Sports Academy** in Mumbai — a premier martial arts academy founded by Sensei Afzal Sultan Khan, teaching Karate Shotokai and Kickboxing with discipline, respect, and the spirit of the warrior.
 
 The site is a public-facing brochure (Home, About, Trainers, Events, Gallery, Contact) plus a protected admin panel for managing events, gallery images, and trainer bio content.
 

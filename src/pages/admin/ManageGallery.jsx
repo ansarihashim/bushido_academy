@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
@@ -12,67 +12,117 @@ import {
 import { db } from '../../firebase/config'
 import { uploadImage } from '../../utils/cloudinary'
 import Toast, { useToast } from '../../components/admin/Toast'
+import ImagePreview from '../../components/admin/ImagePreview'
+import UploadProgress from '../../components/admin/UploadProgress'
+import DropZone from '../../components/admin/DropZone'
 
-const EMPTY_FORM = { file: null, caption: '' }
+const TAG_OPTIONS = [
+  { value: 'general', label: 'General' },
+  { value: 'karate', label: 'Karate' },
+  { value: 'kickboxing', label: 'Kickboxing' },
+]
 
 export default function ManageGallery() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [submitting, setSubmitting] = useState(false)
+  const [selected, setSelected] = useState([]) // { id, file, caption }
+  const [tag, setTag] = useState('general')
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState({ current: 0, total: 0 })
+  const [result, setResult] = useState(null) // { status, successCount, failed }
   const [deletingId, setDeletingId] = useState(null)
+  const [resetSignal, setResetSignal] = useState(0)
   const { toast, showToast } = useToast()
+  const idRef = useRef(0)
 
   async function loadGallery() {
     try {
-      const q = query(
-        collection(db, 'gallery'),
-        orderBy('uploadedAt', 'desc')
-      )
+      const q = query(collection(db, 'gallery'), orderBy('uploadedAt', 'desc'))
       const snapshot = await getDocs(q)
       setItems(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })))
     } catch (err) {
-      showToast(err.message || 'Failed to load gallery', 'error')
+      console.error('[ManageGallery] Load failed:', err.code, err.message, err)
+      showToast(
+        `${err.code || 'error'}: ${err.message || 'Failed to load gallery'}`,
+        'error'
+      )
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGallery()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function resetForm() {
-    setForm(EMPTY_FORM)
-    const input = document.getElementById('gallery-image-input')
-    if (input) input.value = ''
+  function addFiles(files) {
+    if (!files || files.length === 0) return
+    setResult(null)
+    setSelected((prev) => [
+      ...prev,
+      ...files.map((file) => ({ id: ++idRef.current, file, caption: '' })),
+    ])
   }
 
-  async function handleUpload(e) {
-    e.preventDefault()
-    if (submitting) return
-    if (!form.file) {
-      showToast('Please choose an image to upload.', 'error')
-      return
+  function updateCaption(id, caption) {
+    setSelected((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, caption } : s))
+    )
+  }
+
+  function removeSelected(id) {
+    setSelected((prev) => prev.filter((s) => s.id !== id))
+  }
+
+  function clearSelection() {
+    setSelected([])
+  }
+
+  async function handleUploadAll() {
+    if (uploading || selected.length === 0) return
+
+    setUploading(true)
+    setResult(null)
+    const total = selected.length
+    const failed = []
+    let success = 0
+
+    for (let i = 0; i < selected.length; i++) {
+      setProgress({ current: i + 1, total })
+      const { file, caption } = selected[i]
+      try {
+        const imageUrl = await uploadImage(file, 'gallery')
+        await addDoc(collection(db, 'gallery'), {
+          imageUrl,
+          caption: caption.trim(),
+          tag,
+          uploadedAt: serverTimestamp(),
+        })
+        success++
+      } catch (err) {
+        console.error('[ManageGallery] Upload failed for', file.name, err)
+        failed.push(file.name)
+      }
     }
 
-    setSubmitting(true)
-    try {
-      const imageUrl = await uploadImage(form.file, 'gallery')
-      await addDoc(collection(db, 'gallery'), {
-        imageUrl,
-        caption: form.caption.trim(),
-        uploadedAt: serverTimestamp(),
-      })
-      showToast('Image uploaded.')
-      resetForm()
-      await loadGallery()
-    } catch (err) {
-      showToast(err.message || 'Failed to upload image.', 'error')
-    } finally {
-      setSubmitting(false)
+    setUploading(false)
+    if (failed.length === 0) {
+      setResult({ status: 'done', successCount: success, failed: [] })
+      showToast(
+        `${success} ${success === 1 ? 'image' : 'images'} uploaded successfully`
+      )
+    } else {
+      setResult({ status: 'error', successCount: success, failed })
+      showToast(
+        `${success} uploaded, ${failed.length} failed. See details below.`,
+        'error'
+      )
     }
+    setSelected([])
+    setResetSignal((s) => s + 1)
+    await loadGallery()
   }
 
   async function handleDelete(id) {
@@ -96,68 +146,116 @@ export default function ManageGallery() {
       <Toast toast={toast} onClose={() => showToast('')} />
 
       <div className="mb-10">
-        <p className="text-xs tracking-[0.3em] uppercase text-red-600 font-bold mb-2">
+        <p className="text-xs tracking-[0.3em] uppercase text-yellow-500 font-bold mb-2">
           Manage
         </p>
         <h1 className="text-3xl sm:text-4xl font-black text-white tracking-wide">
           Gallery
         </h1>
-        <span className="block mt-4 h-1 w-16 bg-red-600" />
+        <span className="block mt-4 h-1 w-16 bg-yellow-500" />
       </div>
 
       {/* UPLOAD FORM */}
       <section className="mb-12 bg-[#171717] border border-neutral-800 rounded-sm p-6 sm:p-8">
         <h2 className="text-xl font-black text-white tracking-wide mb-6">
-          Upload New Image
+          Upload Images
         </h2>
-        <form onSubmit={handleUpload}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2">
-                Image
-              </label>
-              <input
-                id="gallery-image-input"
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    file: e.target.files?.[0] || null,
-                  }))
-                }
-                className="block w-full text-sm text-neutral-400 file:mr-4 file:py-2.5 file:px-5 file:rounded-sm file:border-0 file:text-xs file:font-bold file:uppercase file:tracking-wider file:bg-red-600 file:text-white hover:file:bg-red-700 file:cursor-pointer cursor-pointer bg-[#0a0a0a] border border-neutral-800 rounded-sm py-2 px-3"
-              />
-              {form.file && (
-                <p className="mt-2 text-xs text-neutral-500">
-                  Selected: {form.file.name}
-                </p>
-              )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2">
+              Images (select one or more)
+            </label>
+            <DropZone
+              multiple
+              showPreview={false}
+              onFilesSelected={addFiles}
+              resetSignal={resetSignal}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="gallery-tag-select"
+              className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2"
+            >
+              Tag (applied to all)
+            </label>
+            <select
+              id="gallery-tag-select"
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-3 rounded-sm transition-colors cursor-pointer"
+            >
+              {TAG_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-neutral-500">
+              Used to group images on the Karate &amp; Kickboxing pages.
+            </p>
+          </div>
+        </div>
+
+        {/* PREVIEW GRID */}
+        {selected.length > 0 && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+              <p className="text-sm font-bold text-white">
+                {selected.length} {selected.length === 1 ? 'image' : 'images'}{' '}
+                ready
+              </p>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={uploading}
+                className="text-xs font-bold uppercase tracking-wider text-neutral-400 hover:text-yellow-500 disabled:opacity-50 transition-colors"
+              >
+                Clear all
+              </button>
             </div>
-            <div>
-              <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2">
-                Caption (optional)
-              </label>
-              <input
-                type="text"
-                value={form.caption}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, caption: e.target.value }))
-                }
-                placeholder="A brief description"
-                className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-3 rounded-sm placeholder:text-neutral-600 transition-colors"
-              />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {selected.map((s) => (
+                <ImagePreview
+                  key={s.id}
+                  file={s.file}
+                  captionValue={s.caption}
+                  onCaptionChange={(v) => updateCaption(s.id, v)}
+                  onRemove={uploading ? undefined : () => removeSelected(s.id)}
+                />
+              ))}
             </div>
           </div>
+        )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-7 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm transition-all duration-200 hover:-translate-y-0.5"
-          >
-            {submitting ? 'Uploading...' : 'Upload Image'}
-          </button>
-        </form>
+        {/* PROGRESS */}
+        {(uploading || result) && (
+          <UploadProgress
+            current={progress.current}
+            total={progress.total}
+            status={uploading ? 'uploading' : result?.status}
+            successCount={result?.successCount}
+            failed={result?.failed || []}
+          />
+        )}
+
+        <button
+          type="button"
+          onClick={handleUploadAll}
+          disabled={uploading || selected.length === 0}
+          className="mt-7 inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-60 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm transition-all duration-200 hover:-translate-y-0.5"
+        >
+          {uploading && (
+            <span
+              aria-hidden="true"
+              className="inline-block w-4 h-4 rounded-full border-2 border-black/30 border-t-black animate-spin"
+            />
+          )}
+          {uploading
+            ? 'Uploading...'
+            : `Upload All${selected.length > 0 ? ` (${selected.length})` : ''}`}
+        </button>
       </section>
 
       {/* IMAGE GRID */}
@@ -177,16 +275,14 @@ export default function ManageGallery() {
           <div className="flex items-center justify-center py-16">
             <div className="relative w-12 h-12">
               <span className="absolute inset-0 rounded-full border-4 border-neutral-800" />
-              <span className="absolute inset-0 rounded-full border-4 border-transparent border-t-red-600 animate-spin" />
+              <span className="absolute inset-0 rounded-full border-4 border-transparent border-t-yellow-500 animate-spin" />
             </div>
           </div>
         )}
 
         {!loading && items.length === 0 && (
           <div className="bg-[#171717] border border-dashed border-neutral-800 rounded-sm p-10 text-center">
-            <p className="text-neutral-400">
-              No images yet. Upload one above.
-            </p>
+            <p className="text-neutral-400">No images yet. Upload one above.</p>
           </div>
         )}
 
@@ -211,6 +307,11 @@ export default function ManageGallery() {
                       </span>
                     </div>
                   )}
+                  {item.tag && item.tag !== 'general' && (
+                    <span className="absolute top-2 left-2 px-2 py-0.5 bg-yellow-500 text-black text-[9px] font-bold uppercase tracking-[0.2em] rounded-sm">
+                      {item.tag}
+                    </span>
+                  )}
                 </div>
                 <div className="p-3 flex-1 flex flex-col">
                   {item.caption && (
@@ -222,7 +323,7 @@ export default function ManageGallery() {
                     type="button"
                     onClick={() => handleDelete(item.id)}
                     disabled={deletingId === item.id}
-                    className="w-full inline-flex items-center justify-center gap-2 bg-red-950/40 hover:bg-red-600 border border-red-900/60 hover:border-red-600 text-red-400 hover:text-white disabled:opacity-60 font-bold uppercase tracking-wider text-[10px] px-4 py-2 rounded-sm transition-colors"
+                    className="w-full inline-flex items-center justify-center gap-2 bg-yellow-950/40 hover:bg-yellow-500 border border-yellow-900/60 hover:border-yellow-500 text-yellow-300 hover:text-white disabled:opacity-60 font-bold uppercase tracking-wider text-[10px] px-4 py-2 rounded-sm transition-colors"
                   >
                     {deletingId === item.id ? 'Deleting...' : 'Delete'}
                   </button>

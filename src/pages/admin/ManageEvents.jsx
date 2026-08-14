@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
   Timestamp,
   addDoc,
@@ -14,6 +14,7 @@ import {
 import { db } from '../../firebase/config'
 import { uploadImage } from '../../utils/cloudinary'
 import Toast, { useToast } from '../../components/admin/Toast'
+import DropZone from '../../components/admin/DropZone'
 
 function toDate(value) {
   if (!value) return null
@@ -40,7 +41,13 @@ function formatDate(date) {
   })
 }
 
-const EMPTY_FORM = { title: '', date: '', description: '', file: null }
+const EMPTY_FORM = {
+  title: '',
+  date: '',
+  description: '',
+  file: null,
+  thumbnailFile: null,
+}
 
 export default function ManageEvents() {
   const [events, setEvents] = useState([])
@@ -55,9 +62,18 @@ export default function ManageEvents() {
   })
   const [editSaving, setEditSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [resetSignal, setResetSignal] = useState(0)
+  const [additionalFiles, setAdditionalFiles] = useState([])
+  const [editExtraFiles, setEditExtraFiles] = useState([])
+  const [editExtraResetSignal, setEditExtraResetSignal] = useState(0)
+  const [extraBusy, setExtraBusy] = useState(false)
+  const [editThumbnailFile, setEditThumbnailFile] = useState(null)
+  const [editThumbnailResetSignal, setEditThumbnailResetSignal] = useState(0)
+  const [thumbnailBusy, setThumbnailBusy] = useState(false)
   const { toast, showToast } = useToast()
 
   async function loadEvents() {
+    console.log('[ManageEvents] Loading events from Firestore...')
     try {
       const q = query(collection(db, 'events'), orderBy('date', 'desc'))
       const snapshot = await getDocs(q)
@@ -65,23 +81,26 @@ export default function ManageEvents() {
         const raw = d.data()
         return { id: d.id, ...raw, date: toDate(raw.date) }
       })
+      console.log(`[ManageEvents] Loaded ${data.length} document(s).`)
       setEvents(data)
     } catch (err) {
-      showToast(err.message || 'Failed to load events', 'error')
+      console.error('[ManageEvents] Load failed:', err.code, err.message, err)
+      showToast(`${err.code || 'error'}: ${err.message || 'Failed to load events'}`, 'error')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadEvents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function resetForm() {
     setForm(EMPTY_FORM)
-    const input = document.getElementById('event-image-input')
-    if (input) input.value = ''
+    setAdditionalFiles([])
+    setResetSignal((s) => s + 1)
   }
 
   async function handleAdd(e) {
@@ -98,18 +117,33 @@ export default function ManageEvents() {
       if (form.file) {
         imageUrl = await uploadImage(form.file, 'events')
       }
-      await addDoc(collection(db, 'events'), {
+      let thumbnailUrl = ''
+      if (form.thumbnailFile) {
+        thumbnailUrl = await uploadImage(form.thumbnailFile, 'events/thumbnails')
+      }
+      const ref = await addDoc(collection(db, 'events'), {
         title: form.title.trim(),
         description: form.description.trim(),
         date: Timestamp.fromDate(new Date(form.date)),
         imageUrl,
+        thumbnailUrl,
+        images: [],
         createdAt: serverTimestamp(),
       })
-      showToast('Event added successfully.')
+      // Upload any additional gallery images into a per-event folder.
+      if (additionalFiles.length > 0) {
+        const urls = []
+        for (const file of additionalFiles) {
+          urls.push(await uploadImage(file, `events/gallery/${ref.id}`))
+        }
+        await updateDoc(doc(db, 'events', ref.id), { images: urls })
+      }
+      showToast('Event added successfully')
       resetForm()
       await loadEvents()
     } catch (err) {
-      showToast(err.message || 'Failed to add event.', 'error')
+      console.error('[ManageEvents] Add failed:', err.code, err.message, err)
+      showToast(`${err.code || 'error'}: ${err.message || 'Failed to add event.'}`, 'error')
     } finally {
       setSubmitting(false)
     }
@@ -122,11 +156,90 @@ export default function ManageEvents() {
       date: dateInputValue(event.date),
       description: event.description || '',
     })
+    setEditExtraFiles([])
+    setEditExtraResetSignal((s) => s + 1)
+    setEditThumbnailFile(null)
+    setEditThumbnailResetSignal((s) => s + 1)
   }
 
   function cancelEdit() {
     setEditingId(null)
     setEditForm({ title: '', date: '', description: '' })
+    setEditExtraFiles([])
+    setEditThumbnailFile(null)
+  }
+
+  async function saveThumbnail(eventId) {
+    if (thumbnailBusy || !editThumbnailFile) return
+    setThumbnailBusy(true)
+    try {
+      const url = await uploadImage(editThumbnailFile, 'events/thumbnails')
+      await updateDoc(doc(db, 'events', eventId), { thumbnailUrl: url })
+      showToast('Thumbnail updated.')
+      setEditThumbnailFile(null)
+      setEditThumbnailResetSignal((s) => s + 1)
+      await loadEvents()
+    } catch (err) {
+      showToast(err.message || 'Failed to upload thumbnail.', 'error')
+    } finally {
+      setThumbnailBusy(false)
+    }
+  }
+
+  async function removeThumbnail(eventId) {
+    if (thumbnailBusy) return
+    if (!window.confirm('Remove this thumbnail?')) return
+    setThumbnailBusy(true)
+    try {
+      await updateDoc(doc(db, 'events', eventId), { thumbnailUrl: '' })
+      showToast('Thumbnail removed.')
+      await loadEvents()
+    } catch (err) {
+      showToast(err.message || 'Failed to remove thumbnail.', 'error')
+    } finally {
+      setThumbnailBusy(false)
+    }
+  }
+
+  async function addExtraImages(eventId) {
+    if (extraBusy || editExtraFiles.length === 0) return
+    setExtraBusy(true)
+    try {
+      const urls = []
+      for (const file of editExtraFiles) {
+        urls.push(await uploadImage(file, `events/gallery/${eventId}`))
+      }
+      const current = events.find((e) => e.id === eventId)?.images || []
+      await updateDoc(doc(db, 'events', eventId), {
+        images: [...current, ...urls],
+      })
+      showToast(`${urls.length} image(s) added.`)
+      setEditExtraFiles([])
+      setEditExtraResetSignal((s) => s + 1)
+      await loadEvents()
+    } catch (err) {
+      showToast(err.message || 'Failed to add images.', 'error')
+    } finally {
+      setExtraBusy(false)
+    }
+  }
+
+  async function removeExtraImage(eventId, url) {
+    if (extraBusy) return
+    if (!window.confirm('Remove this image?')) return
+    setExtraBusy(true)
+    try {
+      const current = events.find((e) => e.id === eventId)?.images || []
+      await updateDoc(doc(db, 'events', eventId), {
+        images: current.filter((u) => u !== url),
+      })
+      showToast('Image removed.')
+      await loadEvents()
+    } catch (err) {
+      showToast(err.message || 'Failed to remove image.', 'error')
+    } finally {
+      setExtraBusy(false)
+    }
   }
 
   async function saveEdit(id) {
@@ -179,13 +292,13 @@ export default function ManageEvents() {
       <Toast toast={toast} onClose={() => showToast('')} />
 
       <div className="mb-10">
-        <p className="text-xs tracking-[0.3em] uppercase text-red-600 font-bold mb-2">
+        <p className="text-xs tracking-[0.3em] uppercase text-yellow-500 font-bold mb-2">
           Manage
         </p>
         <h1 className="text-3xl sm:text-4xl font-black text-white tracking-wide">
           Events
         </h1>
-        <span className="block mt-4 h-1 w-16 bg-red-600" />
+        <span className="block mt-4 h-1 w-16 bg-yellow-500" />
       </div>
 
       {/* ADD EVENT FORM */}
@@ -206,7 +319,7 @@ export default function ManageEvents() {
                   setForm((f) => ({ ...f, title: e.target.value }))
                 }
                 placeholder="State Karate Championship"
-                className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-3 rounded-sm placeholder:text-neutral-600 transition-colors"
+                className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-3 rounded-sm placeholder:text-neutral-600 transition-colors"
               />
             </div>
             <div>
@@ -219,7 +332,7 @@ export default function ManageEvents() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, date: e.target.value }))
                 }
-                className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-3 rounded-sm transition-colors"
+                className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-3 rounded-sm transition-colors"
               />
             </div>
           </div>
@@ -235,35 +348,64 @@ export default function ManageEvents() {
                 setForm((f) => ({ ...f, description: e.target.value }))
               }
               placeholder="Describe the event..."
-              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-3 rounded-sm placeholder:text-neutral-600 transition-colors resize-y"
+              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-3 rounded-sm placeholder:text-neutral-600 transition-colors resize-y"
             />
           </div>
 
           <div className="mt-5">
             <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2">
-              Image
+              Cover Image
             </label>
-            <input
-              id="event-image-input"
-              type="file"
-              accept="image/*"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, file: e.target.files?.[0] || null }))
+            <p className="text-xs text-neutral-500 mb-2">
+              Main image used inside the event details.
+            </p>
+            <DropZone
+              multiple={false}
+              resetSignal={resetSignal}
+              onFilesSelected={(files) =>
+                setForm((f) => ({ ...f, file: files[0] || null }))
               }
-              className="block w-full text-sm text-neutral-400 file:mr-4 file:py-2.5 file:px-5 file:rounded-sm file:border-0 file:text-xs file:font-bold file:uppercase file:tracking-wider file:bg-red-600 file:text-white hover:file:bg-red-700 file:cursor-pointer cursor-pointer bg-[#0a0a0a] border border-neutral-800 rounded-sm py-2 px-3"
             />
-            {form.file && (
-              <p className="mt-2 text-xs text-neutral-500">
-                Selected: {form.file.name}
-              </p>
-            )}
+          </div>
+
+          <div className="mt-5">
+            <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2">
+              Event Thumbnail
+            </label>
+            <p className="text-xs text-neutral-500 mb-2">
+              Image displayed on the Upcoming Events card.
+            </p>
+            <DropZone
+              multiple={false}
+              resetSignal={resetSignal}
+              onFilesSelected={(files) =>
+                setForm((f) => ({ ...f, thumbnailFile: files[0] || null }))
+              }
+            />
+          </div>
+
+          <div className="mt-5">
+            <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-2">
+              Additional Images (shown in event detail gallery) — optional
+            </label>
+            <DropZone
+              multiple
+              resetSignal={resetSignal}
+              onFilesSelected={setAdditionalFiles}
+            />
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="mt-7 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm transition-all duration-200 hover:-translate-y-0.5"
+            className="mt-7 inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-60 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm transition-all duration-200 hover:-translate-y-0.5"
           >
+            {submitting && (
+              <span
+                aria-hidden="true"
+                className="inline-block w-4 h-4 rounded-full border-2 border-black/30 border-t-black animate-spin"
+              />
+            )}
             {submitting ? 'Saving...' : 'Add Event'}
           </button>
         </form>
@@ -286,7 +428,7 @@ export default function ManageEvents() {
           <div className="flex items-center justify-center py-16">
             <div className="relative w-12 h-12">
               <span className="absolute inset-0 rounded-full border-4 border-neutral-800" />
-              <span className="absolute inset-0 rounded-full border-4 border-transparent border-t-red-600 animate-spin" />
+              <span className="absolute inset-0 rounded-full border-4 border-transparent border-t-yellow-500 animate-spin" />
             </div>
           </div>
         )}
@@ -322,7 +464,7 @@ export default function ManageEvents() {
                           </span>
                         </div>
                       )}
-                      <span className="absolute bottom-0 left-0 right-0 h-1 bg-red-600" />
+                      <span className="absolute bottom-0 left-0 right-0 h-1 bg-yellow-500" />
                     </div>
 
                     <div className="md:col-span-3 p-5 sm:p-6">
@@ -341,7 +483,7 @@ export default function ManageEvents() {
                                   title: e.target.value,
                                 }))
                               }
-                              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-2.5 rounded-sm transition-colors"
+                              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-2.5 rounded-sm transition-colors"
                             />
                           </div>
                           <div>
@@ -357,7 +499,7 @@ export default function ManageEvents() {
                                   date: e.target.value,
                                 }))
                               }
-                              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-2.5 rounded-sm transition-colors"
+                              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-2.5 rounded-sm transition-colors"
                             />
                           </div>
                           <div>
@@ -373,15 +515,126 @@ export default function ManageEvents() {
                                   description: e.target.value,
                                 }))
                               }
-                              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-red-600 focus:outline-none text-white px-4 py-2.5 rounded-sm transition-colors resize-y"
+                              className="w-full bg-[#0a0a0a] border border-neutral-800 focus:border-yellow-500 focus:outline-none text-white px-4 py-2.5 rounded-sm transition-colors resize-y"
                             />
                           </div>
+
+                          {/* Additional images manager */}
+                          <div className="pt-2 border-t border-neutral-800">
+                            <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-3">
+                              Additional Images
+                            </label>
+                            {event.images && event.images.length > 0 ? (
+                              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-4">
+                                {event.images.map((url) => (
+                                  <div
+                                    key={url}
+                                    className="relative aspect-square bg-neutral-900 rounded-sm overflow-hidden border border-neutral-800"
+                                  >
+                                    <img
+                                      src={url}
+                                      alt=""
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        removeExtraImage(event.id, url)
+                                      }
+                                      disabled={extraBusy}
+                                      aria-label="Remove image"
+                                      className="absolute top-1 right-1 inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm leading-none"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-neutral-500 mb-4">
+                                No additional images yet.
+                              </p>
+                            )}
+
+                            <DropZone
+                              multiple
+                              resetSignal={editExtraResetSignal}
+                              onFilesSelected={setEditExtraFiles}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => addExtraImages(event.id)}
+                              disabled={extraBusy || editExtraFiles.length === 0}
+                              className="mt-3 inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
+                            >
+                              {extraBusy
+                                ? 'Working…'
+                                : `Upload${
+                                    editExtraFiles.length > 0
+                                      ? ` (${editExtraFiles.length})`
+                                      : ''
+                                  }`}
+                            </button>
+                          </div>
+
+                          {/* Thumbnail manager */}
+                          <div className="pt-2 border-t border-neutral-800">
+                            <label className="block text-[10px] tracking-[0.3em] uppercase text-neutral-400 font-bold mb-1">
+                              Event Thumbnail
+                            </label>
+                            <p className="text-xs text-neutral-500 mb-3">
+                              Image displayed on the Upcoming Events card.
+                            </p>
+                            {event.thumbnailUrl ? (
+                              <div className="relative w-32 aspect-video bg-neutral-900 rounded-sm overflow-hidden border border-neutral-800 mb-4">
+                                <img
+                                  src={event.thumbnailUrl}
+                                  alt=""
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeThumbnail(event.id)}
+                                  disabled={thumbnailBusy}
+                                  aria-label="Remove thumbnail"
+                                  className="absolute top-1 right-1 inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm leading-none"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-neutral-500 mb-4">
+                                No thumbnail uploaded.
+                              </p>
+                            )}
+
+                            <DropZone
+                              multiple={false}
+                              resetSignal={editThumbnailResetSignal}
+                              onFilesSelected={(files) =>
+                                setEditThumbnailFile(files[0] || null)
+                              }
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveThumbnail(event.id)}
+                              disabled={thumbnailBusy || !editThumbnailFile}
+                              className="mt-3 inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
+                            >
+                              {thumbnailBusy
+                                ? 'Working…'
+                                : event.thumbnailUrl
+                                  ? 'Replace Thumbnail'
+                                  : 'Upload Thumbnail'}
+                            </button>
+                          </div>
+
                           <div className="flex flex-wrap gap-3 pt-1">
                             <button
                               type="button"
                               onClick={() => saveEdit(event.id)}
                               disabled={editSaving}
-                              className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
+                              className="inline-flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-60 text-white font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
                             >
                               {editSaving ? 'Saving...' : 'Save'}
                             </button>
@@ -396,7 +649,7 @@ export default function ManageEvents() {
                         </div>
                       ) : (
                         <div>
-                          <p className="text-xs tracking-[0.25em] uppercase text-red-600 font-bold mb-2">
+                          <p className="text-xs tracking-[0.25em] uppercase text-yellow-500 font-bold mb-2">
                             {formatDate(event.date)}
                           </p>
                           <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide mb-2">
@@ -411,7 +664,7 @@ export default function ManageEvents() {
                             <button
                               type="button"
                               onClick={() => startEdit(event)}
-                              className="inline-flex items-center gap-2 border border-neutral-700 hover:border-red-600 text-neutral-200 hover:text-red-600 font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
+                              className="inline-flex items-center gap-2 border border-neutral-700 hover:border-yellow-500 text-neutral-200 hover:text-yellow-500 font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
                             >
                               Edit
                             </button>
@@ -419,7 +672,7 @@ export default function ManageEvents() {
                               type="button"
                               onClick={() => handleDelete(event.id)}
                               disabled={deletingId === event.id}
-                              className="inline-flex items-center gap-2 bg-red-950/40 hover:bg-red-600 border border-red-900/60 hover:border-red-600 text-red-400 hover:text-white disabled:opacity-60 font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
+                              className="inline-flex items-center gap-2 bg-yellow-950/40 hover:bg-yellow-500 border border-yellow-900/60 hover:border-yellow-500 text-yellow-300 hover:text-white disabled:opacity-60 font-bold uppercase tracking-wider text-xs px-5 py-2.5 rounded-sm transition-colors"
                             >
                               {deletingId === event.id
                                 ? 'Deleting...'
