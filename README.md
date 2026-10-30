@@ -81,10 +81,15 @@ VITE_CLOUDINARY_UPLOAD_PRESET=bushido-academy
 - Firebase values come from your Firebase project settings → "General" → "Your apps" → SDK config.
 - The Cloudinary upload preset must be set to **unsigned** and allow uploads to the `events` and `gallery` folders.
 
-## Admin Panel
+## Admin Panel & Quick Access
 
-- Visit `/admin/login` and sign in with a Firebase Auth user (Email/Password provider must be enabled in the Firebase console).
-- After login you'll see `/admin` with sidebar links: Overview, Events, Gallery, Trainer Bio.
+Admin mode can be accessed through:
+1. **Three-tap gesture on the screen**: Tap 3 times rapidly in place on any empty space on the screen (mobile touch or desktop mouse click) to invite the in-place "Admin Access" login modal.
+2. **Keyboard shortcut (Desktop)**: Press `Ctrl + Shift + A` anywhere on the public site.
+3. **Direct URL**: Visit `/admin/login` directly to access the dedicated Admin Sign In page.
+
+- After login on public pages, an in-place **Admin Mode** toolbar docks at the bottom with quick management drawers for Gallery, Events, Slides, Trainer Bio, Text Editing, and Site Settings. It can be minimized via the "Hide" button or toggled via three-tap.
+- On the dedicated `/admin` dashboard, full sidebar links are available: Overview, Events, Gallery, Slides, Trainer Bio, Settings, and Content.
 - In development (`import.meta.env.DEV`) a hidden **Seed Data** button appears in the sidebar; clicking it once populates the `trainers` collection with the founder document defined in [`src/utils/seedData.js`](src/utils/seedData.js). It is a no-op if data already exists.
 
 ## Firestore Collections

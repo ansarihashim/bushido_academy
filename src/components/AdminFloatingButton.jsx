@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { auth } from '../firebase/config'
@@ -508,7 +508,7 @@ function AdminDrawer({ drawerKey, onClose }) {
 /*  Bottom admin toolbar (shown when logged in)                               */
 /* -------------------------------------------------------------------------- */
 
-function AdminToolbar({ onOpenDrawer, onLogout, loggingOut, closing }) {
+function AdminToolbar({ onOpenDrawer, onLogout, loggingOut, closing, onMinimize }) {
   return (
     <div
       className="afb-toolbar"
@@ -531,21 +531,67 @@ function AdminToolbar({ onOpenDrawer, onLogout, loggingOut, closing }) {
           : 'toolbarSlideUp 400ms cubic-bezier(0.34,1.56,0.64,1) forwards',
       }}
     >
-      <span
-        className="font-heading"
+      <div
         style={{
-          color: '#eab308',
-          fontWeight: 700,
-          fontSize: '0.7rem',
-          letterSpacing: '0.2em',
-          textTransform: 'uppercase',
-          paddingRight: '4px',
-          whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           width: '100%',
+          paddingBottom: '2px',
         }}
       >
-        Admin Mode
-      </span>
+        <span
+          className="font-heading"
+          style={{
+            color: '#eab308',
+            fontWeight: 700,
+            fontSize: '0.7rem',
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            paddingRight: '4px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Admin Mode
+        </span>
+        <button
+          type="button"
+          onClick={onMinimize}
+          title="Minimize toolbar (Triple-tap screen to restore)"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#a3a3a3',
+            cursor: 'pointer',
+            padding: '2px 8px',
+            fontSize: '11px',
+            fontFamily: 'inherit',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            borderRadius: '2px',
+            transition: 'color 0.2s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#eab308')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = '#a3a3a3')}
+        >
+          <span>Hide</span>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
 
       {Object.entries(DRAWERS).map(([key, { label, Icon }]) => (
         <button
@@ -583,12 +629,61 @@ export default function AdminFloatingButton() {
   const [activeDrawer, setActiveDrawer] = useState(null)
   const [loggingOut, setLoggingOut] = useState(false)
   const [toolbarClosing, setToolbarClosing] = useState(false)
+  const [toolbarMinimized, setToolbarMinimized] = useState(false)
 
-  const tapCount = useRef(0)
-  const tapTimer = useRef(null)
+  const tapHistoryRef = useRef([])
+  const touchStartRef = useRef(null)
+  const lastTouchTimeRef = useRef(0)
 
   const loggedIn = Boolean(user)
   const onAdminRoute = pathname.startsWith('/admin')
+
+  // Helper: ignore taps/clicks on interactive controls
+  const isInteractive = useCallback((el) => {
+    if (!el || !el.closest) return false
+    return Boolean(
+      el.closest(
+        'a, button, input, textarea, select, [role="button"], [role="link"], label, .afb-toolbar, .afb-drawer, [role="dialog"]'
+      )
+    )
+  }, [])
+
+  // Trigger admin access mode
+  const triggerAdminAccess = useCallback(() => {
+    if (loggedIn) {
+      // Toggle toolbar visibility for authenticated admins
+      setToolbarMinimized((prev) => !prev)
+    } else {
+      setShowLogin(true)
+    }
+  }, [loggedIn])
+
+  // Register tap/click with strict timing (< 900ms total window) and proximity (< 75px radius)
+  const registerTap = useCallback(
+    (x, y) => {
+      const now = Date.now()
+      // Discard taps older than 900ms
+      tapHistoryRef.current = tapHistoryRef.current.filter((t) => now - t.time <= 900)
+
+      // Ensure consecutive taps are in the same localized area
+      if (tapHistoryRef.current.length > 0) {
+        const first = tapHistoryRef.current[0]
+        const dist = Math.hypot(x - first.x, y - first.y)
+        if (dist > 75) {
+          tapHistoryRef.current = []
+        }
+      }
+
+      tapHistoryRef.current.push({ x, y, time: now })
+
+      // Exactly 3 taps invites the admin mode!
+      if (tapHistoryRef.current.length >= 3) {
+        tapHistoryRef.current = []
+        triggerAdminAccess()
+      }
+    },
+    [triggerAdminAccess]
+  )
 
   // Lock background scroll whenever a modal or drawer is open.
   useEffect(() => {
@@ -601,51 +696,128 @@ export default function AdminFloatingButton() {
     }
   }, [showLogin, activeDrawer])
 
-  // Secret access: there is NO visible entry point for regular visitors.
-  // Admins reveal the login modal with Ctrl + Shift + A.
+  // Secret keyboard shortcut for desktop admins: Ctrl + Shift + A
   useEffect(() => {
     if (onAdminRoute) return
     function handleKeyDown(e) {
-      // e.key is 'A' when Shift is held; guard with the secret combo only.
       if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
         e.preventDefault()
-        setShowLogin(true)
+        triggerAdminAccess()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onAdminRoute])
+  }, [onAdminRoute, triggerAdminAccess])
 
-  // Mobile secret access: triple-tap anywhere within 500ms.
+  // Robust touch 3-tap gesture detector (strictly filters out scrolls, swipes, drags, and long-presses)
   useEffect(() => {
     if (onAdminRoute) return
-    function handleTouchEnd() {
-      tapCount.current += 1
 
-      if (tapTimer.current) clearTimeout(tapTimer.current)
-      tapTimer.current = setTimeout(() => {
-        tapCount.current = 0
-      }, 500)
+    function handleTouchStart(e) {
+      // Must be a single finger touch
+      if (e.touches.length !== 1) {
+        touchStartRef.current = null
+        return
+      }
 
-      if (tapCount.current >= 3) {
-        tapCount.current = 0
-        clearTimeout(tapTimer.current)
-        if (!showLogin) setShowLogin(true)
+      // Ignore touches on interactive elements (links, buttons, inputs, etc.)
+      if (isInteractive(e.target)) {
+        touchStartRef.current = null
+        return
+      }
+
+      const touch = e.touches[0]
+      touchStartRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startTime: Date.now(),
+        moved: false,
       }
     }
 
-    window.addEventListener('touchend', handleTouchEnd, { passive: true })
-    return () => {
-      window.removeEventListener('touchend', handleTouchEnd)
-      if (tapTimer.current) clearTimeout(tapTimer.current)
+    function handleTouchMove(e) {
+      if (!touchStartRef.current) return
+
+      if (e.touches.length !== 1) {
+        touchStartRef.current.moved = true
+        return
+      }
+
+      const touch = e.touches[0]
+      const dist = Math.hypot(
+        touch.clientX - touchStartRef.current.startX,
+        touch.clientY - touchStartRef.current.startY
+      )
+
+      // If finger moved > 12px, it is a scroll, swipe, or drag gesture — NOT a tap!
+      if (dist > 12) {
+        touchStartRef.current.moved = true
+      }
     }
-  }, [onAdminRoute, showLogin])
+
+    function handleTouchCancel() {
+      touchStartRef.current = null
+    }
+
+    function handleTouchEnd(e) {
+      lastTouchTimeRef.current = Date.now()
+      if (!touchStartRef.current) return
+
+      const { startX, startY, startTime, moved } = touchStartRef.current
+      touchStartRef.current = null
+
+      // Ignore if user was scrolling, swiping, or dragging
+      if (moved) return
+
+      // Ignore if held down too long (a tap is quick, <= 350ms)
+      const duration = Date.now() - startTime
+      if (duration > 350) return
+
+      // Verify final touch coordinate did not drift
+      if (e.changedTouches && e.changedTouches.length === 1) {
+        const endTouch = e.changedTouches[0]
+        const finalDist = Math.hypot(endTouch.clientX - startX, endTouch.clientY - startY)
+        if (finalDist > 14) return
+      }
+
+      registerTap(startX, startY)
+    }
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true })
+    window.addEventListener('touchmove', handleTouchMove, { passive: true })
+    window.addEventListener('touchend', handleTouchEnd, { passive: true })
+    window.addEventListener('touchcancel', handleTouchCancel, { passive: true })
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleTouchEnd)
+      window.removeEventListener('touchcancel', handleTouchCancel)
+    }
+  }, [onAdminRoute, isInteractive, registerTap])
+
+  // Desktop mouse triple-click detector on empty areas
+  useEffect(() => {
+    if (onAdminRoute) return
+
+    function handleClick(e) {
+      // Ignore click events synthesized by touch screens (< 600ms after touch)
+      if (Date.now() - lastTouchTimeRef.current < 600) return
+      if (isInteractive(e.target)) return
+
+      registerTap(e.clientX, e.clientY)
+    }
+
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [onAdminRoute, isInteractive, registerTap])
 
   function handleLogout() {
     if (loggingOut) return
     setLoggingOut(true)
     setActiveDrawer(null)
     setShowLogin(false)
+    setToolbarMinimized(false)
     // Let the toolbar play its slide-down before we sign out (unmounts it).
     setToolbarClosing(true)
     setTimeout(async () => {
@@ -671,20 +843,62 @@ export default function AdminFloatingButton() {
 
       {/*
         No visible button: regular visitors see nothing. The login modal is
-        revealed only via the secret Ctrl+Shift+A shortcut (desktop) or a
-        triple-tap anywhere (mobile, handled above).
+        revealed only via three intentional taps on the screen (mobile & desktop),
+        or via Ctrl+Shift+A shortcut.
       */}
       {showLogin && !loggedIn && <LoginModal onClose={() => setShowLogin(false)} />}
 
       {/* Admin toolbar + drawers — ONLY rendered when authenticated. */}
       {loggedIn && (
         <>
-          <AdminToolbar
-            onOpenDrawer={setActiveDrawer}
-            onLogout={handleLogout}
-            loggingOut={loggingOut}
-            closing={toolbarClosing}
-          />
+          {toolbarMinimized ? (
+            <button
+              type="button"
+              onClick={() => setToolbarMinimized(false)}
+              className="afb-toolbar-pill"
+              title="Admin Mode (Click or Triple-tap screen to expand)"
+              style={{
+                position: 'fixed',
+                bottom: '16px',
+                right: '16px',
+                zIndex: 9997,
+                background: '#111111',
+                border: '1px solid #eab308',
+                color: '#eab308',
+                padding: '8px 14px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontFamily: "'Oswald', sans-serif",
+                letterSpacing: '1px',
+                textTransform: 'uppercase',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+                cursor: 'pointer',
+                animation: 'afbFadeIn 0.2s ease-out',
+              }}
+            >
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: '#22c55e',
+                  display: 'inline-block',
+                }}
+              />
+              Admin Mode
+            </button>
+          ) : (
+            <AdminToolbar
+              onOpenDrawer={setActiveDrawer}
+              onLogout={handleLogout}
+              loggingOut={loggingOut}
+              closing={toolbarClosing}
+              onMinimize={() => setToolbarMinimized(true)}
+            />
+          )}
           {activeDrawer && (
             <AdminDrawer
               drawerKey={activeDrawer}
